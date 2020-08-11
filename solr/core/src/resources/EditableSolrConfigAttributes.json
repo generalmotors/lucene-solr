@@ -56,7 +56,7 @@
     "enableLazyFieldLoading":1,
     "boolTofilterOptimizer":1,
     "useCircuitBreakers":10,
-    "memoryCircuitBreakerThreshold":20,
+    "memoryCircuitBreakerThresholdPct":20,
     "maxBooleanClauses":1},
   "jmx":{
     "agentId":0,
@@ -70,7 +70,4 @@
       "enableRemoteStreaming":10,
       "enableStreamBody":10,
       "addHttpRequestToContext":0}},
-  "peerSync":{
-    "useRangeVersions":11
-  }
 }

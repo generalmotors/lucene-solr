@@ -70,10 +70,6 @@
 
     <queryResultWindowSize>10</queryResultWindowSize>
 
-    <useCircuitBreakers>true</useCircuitBreakers>
-
-    <memoryCircuitBreakerThreshold>75</memoryCircuitBreakerThreshold>
-
     <!-- boolToFilterOptimizer converts boolean clauses with zero boost
          into cached filters if the number of docs selected by the clause exceeds
          the threshold (represented as a fraction of the total index)
@@ -81,6 +77,14 @@
     <boolTofilterOptimizer enabled="false" cacheSize="32" threshold=".05"/>
 
   </query>
+
+  <circuitBreaker>
+
+    <useCircuitBreakers>true</useCircuitBreakers>
+
+    <memoryCircuitBreakerThresholdPct>75</memoryCircuitBreakerThresholdPct>
+
+  </circuitBreaker>
 
   <initParams path="/select">
     <lst name="defaults">

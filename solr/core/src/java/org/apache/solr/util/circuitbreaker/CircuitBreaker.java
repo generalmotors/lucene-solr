@@ -17,40 +17,40 @@
 
 package org.apache.solr.util.circuitbreaker;
 
-import org.apache.solr.core.SolrCore;
+import org.apache.solr.core.SolrConfig;
 
 /**
  * Default class to define circuit breakers for Solr.
- *
- * There are two (typical) ways to use circuit breakers:
- *
- * 1. Have them checked at admission control by default (use CircuitBreakerManager for the same)
- * 2. Use the circuit breaker in a specific code path(s)
+ * <p>
+ *  There are two (typical) ways to use circuit breakers:
+ *  1. Have them checked at admission control by default (use CircuitBreakerManager for the same).
+ *  2. Use the circuit breaker in a specific code path(s).
  *
  * TODO: This class should be grown as the scope of circuit breakers grow.
+ * </p>
  */
 public abstract class CircuitBreaker {
   public static final String NAME = "circuitbreaker";
 
-  protected final SolrCore solrCore;
+  protected final SolrConfig solrConfig;
 
-  public CircuitBreaker(SolrCore solrCore) {
-    this.solrCore = solrCore;
+  public CircuitBreaker(SolrConfig solrConfig) {
+    this.solrConfig = solrConfig;
   }
 
   // Global config for all circuit breakers. For specific circuit breaker configs, define
-  // your own config
-  protected boolean isCircuitBreakerEnabled() {
-    return solrCore.getSolrConfig().useCircuitBreakers;
+  // your own config.
+  protected boolean isEnabled() {
+    return solrConfig.useCircuitBreakers;
   }
 
   /**
-   * Check if this allocation will trigger circuit breaker.
+   * Check if circuit breaker is tripped.
    */
-  public abstract boolean isCircuitBreakerGauntletTripped();
+  public abstract boolean isTripped();
 
   /**
-   * Print debug useful info
+   * Get debug useful info.
    */
-  public abstract String printDebugInfo();
+  public abstract String getDebugInfo();
 }

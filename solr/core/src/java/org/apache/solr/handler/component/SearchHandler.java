@@ -23,9 +23,10 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.lucene.index.ExitableDirectoryReader;
 import org.apache.lucene.search.TotalHits;
 import org.apache.solr.client.solrj.SolrServerException;
@@ -54,7 +55,6 @@ import org.apache.solr.util.RTimerTree;
 import org.apache.solr.util.SolrPluginUtils;
 import org.apache.solr.util.circuitbreaker.CircuitBreaker;
 import org.apache.solr.util.circuitbreaker.CircuitBreakerManager;
-import org.apache.solr.util.circuitbreaker.CircuitBreakerType;
 import org.apache.solr.util.plugin.PluginInfoInitialized;
 import org.apache.solr.util.plugin.SolrCoreAware;
 import org.slf4j.Logger;
@@ -75,6 +75,11 @@ public class SearchHandler extends RequestHandlerBase implements SolrCoreAware, 
   static final String INIT_LAST_COMPONENTS = "last-components";
 
   private static final Logger log = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+
+  /**
+   * A counter to ensure that no RID is equal, even if they fall in the same millisecond
+   */
+  private static final AtomicLong ridCounter = new AtomicLong();
 
   protected volatile List<SearchComponent> components;
   private ShardHandlerFactory shardHandlerFactory;
@@ -161,15 +166,10 @@ public class SearchHandler extends RequestHandlerBase implements SolrCoreAware, 
         }
 
         @Override
-        public void changed(PackageLoader.Package pkg) {
+        public void changed(PackageLoader.Package pkg, Ctx ctx) {
           //we could optimize this by listening to only relevant packages,
           // but it is not worth optimizing as these are lightweight objects
           components = null;
-        }
-
-        @Override
-        public PackageLoader.Package.Version getPackageVersion() {
-          return null;
         }
       });
     }
@@ -304,22 +304,23 @@ public class SearchHandler extends RequestHandlerBase implements SolrCoreAware, 
     final RTimerTree timer = rb.isDebug() ? req.getRequestTimer() : null;
 
     if (req.getCore().getSolrConfig().useCircuitBreakers) {
-      Map<CircuitBreakerType, CircuitBreaker> trippedCircuitBreakers;
+      List<CircuitBreaker> trippedCircuitBreakers;
+
       if (timer != null) {
         RTimerTree subt = timer.sub("circuitbreaker");
         rb.setTimer(subt);
 
         CircuitBreakerManager circuitBreakerManager = req.getCore().getCircuitBreakerManager();
-        trippedCircuitBreakers = circuitBreakerManager.checkAllCircuitBreakers();
+        trippedCircuitBreakers = circuitBreakerManager.checkTripped();
 
         rb.getTimer().stop();
       } else {
         CircuitBreakerManager circuitBreakerManager = req.getCore().getCircuitBreakerManager();
-        trippedCircuitBreakers = circuitBreakerManager.checkAllCircuitBreakers();
+        trippedCircuitBreakers = circuitBreakerManager.checkTripped();
       }
 
       if (trippedCircuitBreakers != null) {
-        String errorMessage = CircuitBreakerManager.constructFinalErrorMessageString(trippedCircuitBreakers);
+        String errorMessage = CircuitBreakerManager.toErrorMessage(trippedCircuitBreakers);
         rsp.add(STATUS, FAILURE);
         rsp.setException(new SolrException(SolrException.ErrorCode.SERVICE_UNAVAILABLE, "Circuit Breakers tripped " + errorMessage));
         return;
@@ -327,7 +328,9 @@ public class SearchHandler extends RequestHandlerBase implements SolrCoreAware, 
     }
 
     final ShardHandler shardHandler1 = getAndPrepShardHandler(req, rb); // creates a ShardHandler object only if it's needed
-    
+
+    tagRequestWithRequestId(rb);
+
     if (timer == null) {
       // non-debugging prepare phase
       for( SearchComponent c : components ) {
@@ -376,7 +379,7 @@ public class SearchHandler extends RequestHandlerBase implements SolrCoreAware, 
           }
         }
       } catch (ExitableDirectoryReader.ExitingReaderException ex) {
-        log.warn("Query: {}; {}", req.getParamString(), ex.getMessage());
+        log.warn("Query: {}; ", req.getParamString(), ex);
         if( rb.rsp.getResponse() == null) {
           rb.rsp.addResponse(new SolrDocumentList());
         }
@@ -527,6 +530,42 @@ public class SearchHandler extends RequestHandlerBase implements SolrCoreAware, 
       shardInfo.add(shardInfoName, nl);   
       rsp.getValues().add(ShardParams.SHARDS_INFO,shardInfo);            
     }
+  }
+
+  private void tagRequestWithRequestId(ResponseBuilder rb) {
+    final boolean ridTaggingDisabled = rb.req.getParams().getBool(CommonParams.DISABLE_REQUEST_ID, false);
+    if (! ridTaggingDisabled) {
+      String rid = getOrGenerateRequestId(rb.req);
+      if (StringUtils.isBlank(rb.req.getParams().get(CommonParams.REQUEST_ID))) {
+        ModifiableSolrParams params = new ModifiableSolrParams(rb.req.getParams());
+        params.add(CommonParams.REQUEST_ID, rid);//add rid to the request so that shards see it
+        rb.req.setParams(params);
+      }
+      if (rb.isDistrib) {
+        rb.rsp.addToLog(CommonParams.REQUEST_ID, rid); //to see it in the logs of the landing core
+      }
+    }
+  }
+
+  /**
+   * Returns a String to use as an identifier for this request.
+   *
+   * If the provided {@link SolrQueryRequest} contains a non-blank {@link CommonParams#REQUEST_ID} param value this is
+   * used.  This is especially useful for users who deploy Solr as one component in a larger ecosystem, and want to use
+   * an external ID utilized by other components as well.  If no {@link CommonParams#REQUEST_ID} value is present, one
+   * is generated from scratch for the request.
+   * <p>
+   * Callers are responsible for storing the returned value in the {@link SolrQueryRequest} object if they want to
+   * ensure that ID generation is not redone on subsequent calls.
+   */
+  public static String getOrGenerateRequestId(SolrQueryRequest req) {
+    String rid = req.getParams().get(CommonParams.REQUEST_ID);
+    return StringUtils.isNotBlank(rid) ? rid : generateRid(req);
+  }
+
+  private static String generateRid(SolrQueryRequest req) {
+    String hostName = req.getCore().getCoreContainer().getHostName();
+    return hostName + "-" + ridCounter.getAndIncrement();
   }
 
   //////////////////////// SolrInfoMBeans methods //////////////////////

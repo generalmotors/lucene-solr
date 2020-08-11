@@ -202,9 +202,12 @@ _Query Sizing and Warming_
 * `query.queryResultWindowSize`
 * `query.queryResultMaxDocCached`
 
-_Query JVM Metrics Control_
+_Query Circuit Breakers_
+
+See <<circuit-breakers.adoc#circuit-breakers,Circuit Breakers in Solr>> for more details
+
 * `query.useCircuitBreakers`
-* `query.memoryCircuitBreakerThreshold`
+* `query.memoryCircuitBreakerThresholdPct`
 
 *RequestDispatcher Settings*
 
@@ -370,9 +373,6 @@ These commands allow registering more advanced customizations to Solr:
 * `add-listener`
 * `update-listener`
 * `delete-listener`
-* `add-runtimelib`
-* `update-runtimelib`
-* `delete-runtimelib`
 * `add-expressible`
 * `update-expressible`
 * `delete-expressible`
